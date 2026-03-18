@@ -159,6 +159,9 @@ function App() {
                   </button>
                 )}
               </div>
+              <button className="reset-btn" onClick={resetState} style={{ marginTop: '2rem' }}>
+                Analyze Another Image
+              </button>
             </div>
 
             <div className="result-right">
@@ -204,10 +207,6 @@ function App() {
                 <h4 style={{ margin: '0 0 0.5rem 0', color: 'var(--accent)' }}>Explanation</h4>
                 {result.explanation}
               </div>
-
-              <button className="reset-btn" onClick={resetState}>
-                Analyze Another Image
-              </button>
             </div>
           </div>
         )}
