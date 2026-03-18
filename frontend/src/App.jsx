@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import './index.css';
 
 function App() {
@@ -8,6 +8,32 @@ function App() {
   const [result, setResult] = useState(null);
   const [isDragActive, setIsDragActive] = useState(false);
   const [showEla, setShowEla] = useState(false);
+
+  const [vantaEffect, setVantaEffect] = useState(null);
+  const myRef = useRef(null);
+
+  useEffect(() => {
+    if (!vantaEffect && window.VANTA) {
+      setVantaEffect(window.VANTA.WAVES({
+        el: myRef.current,
+        mouseControls: true,
+        touchControls: true,
+        gyroControls: false,
+        minHeight: 200.00,
+        minWidth: 200.00,
+        scale: 1.00,
+        scaleMobile: 1.00,
+        color: 0x050510,
+        shininess: 45.0,
+        waveHeight: 18.0,
+        waveSpeed: 0.9,
+        zoom: 0.8
+      }))
+    }
+    return () => {
+      if (vantaEffect) vantaEffect.destroy()
+    }
+  }, [vantaEffect]);
 
   const handleDrag = (e) => {
     e.preventDefault();
@@ -78,13 +104,14 @@ function App() {
   };
 
   return (
-    <div className="app-container">
-      <header className="header">
-        <h1>AiSense</h1>
-        <p>Premium AI vs Real Image Detection</p>
-      </header>
+    <div className="vanta-bg-container" ref={myRef}>
+      <div className="app-container">
+        <header className="header" style={{ marginBottom: "1rem" }}>
+          <h1>AiSense</h1>
+          <p>Premium AI vs Real Image Detection</p>
+        </header>
 
-      <main className="glass-panel">
+        <main className="glass-panel">
         {!image && !loading && (
           <div 
             className={`upload-zone ${isDragActive ? 'drag-active' : ''}`}
@@ -185,6 +212,7 @@ function App() {
           </div>
         )}
       </main>
+      </div>
     </div>
   );
 }
