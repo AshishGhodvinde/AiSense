@@ -1,0 +1,24 @@
+# Node
+node_modules/
+dist/
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+backend/.venv/
+venv/
+env/
+
+# PyTorch Weights & Datasets
+backend/weights/
+*.pth
+*.pt
+
+# OS Files
+.DS_Store
+Thumbs.db
