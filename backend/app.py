@@ -96,7 +96,14 @@ async def analyze(file: UploadFile = File(...)):
     # The 0.50–0.70 grey zone → Real (we accept missing borderline AI
     # rather than falsely flagging real photos as AI).
     final_is_ai = bool(final_score >= 0.70)
-    final_confidence = float(final_score if final_is_ai else (1.0 - final_score))
+
+    # Confidence: how sure are we in the ACTUAL verdict direction.
+    # Cap at 0.97 so it never reads as an unrealistic "100%".
+    # Also apply a soft-scale: linear between 0.50–0.97 so Sightengine's
+    # binary 0.01/0.99 outputs produce meaningful variance rather than always 99%.
+    raw_conf = float(final_score if final_is_ai else (1.0 - final_score))
+    # Re-map [0.5 → 1.0]  to  [0.50 → 0.97]
+    final_confidence = min(0.97, 0.50 + (raw_conf - 0.50) * 0.94)
     
     ela_base64 = ""
     if ela_cv2 is not None:
@@ -124,5 +131,5 @@ async def analyze(file: UploadFile = File(...)):
             "noise_ai_prob": float(f"{noise_prob:.2f}"),
             "artifact_ai_prob": float(f"{artifact_prob:.2f}")
         },
-        "ela_image": f"data:image/jpeg;base64,{ela_base64}" if ela_base64 else None
+        "ela_image": ela_base64 if ela_base64 else None
     }
