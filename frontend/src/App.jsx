@@ -93,18 +93,31 @@ function App() {
   // Letter-by-letter logo reveal
   useEffect(() => {
     if (!logoRef.current) return;
+
     const text = 'AiSense';
+
     logoRef.current.innerHTML = text
       .split('')
       .map(ch => `<span class="logo-letter">${ch}</span>`)
       .join('');
-    gsap.to('.logo-letter', {
-      clipPath: 'inset(0 0 0% 0)',
-      duration: 0.55,
-      ease: 'power4.out',
-      stagger: 0.07,
-      delay: 0.25,
-    });
+
+    gsap.fromTo(
+      '.logo-letter',
+      {
+        clipPath: 'inset(0 0 100% 0)',
+        opacity: 0,
+        y: 20
+      },
+      {
+        clipPath: 'inset(0 0 0% 0)',
+        opacity: 1,
+        y: 0,
+        duration: 0.6,
+        ease: 'power4.out',
+        stagger: 0.06,
+        delay: 0.2
+      }
+    );
   }, []);
 
   // Vanta
