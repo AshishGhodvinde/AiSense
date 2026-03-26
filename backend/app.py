@@ -4,14 +4,17 @@ import json
 import base64
 import cv2
 import torch
-import torch.nn.functional as F
+from dotenv import load_dotenv
+load_dotenv()   # reads backend/.env → injects SIGHTENGINE_USER / SIGHTENGINE_SECRET
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from torchvision import transforms
 from PIL import Image
 
-from model import load_inference_model
-from heuristics import compute_ela, compute_high_freq_noise, compute_exif_heuristics
+from model import load_inference_model, predict_image
+from heuristics import compute_ela, compute_exif_heuristics
+from frequency import extract_frequency_features
+from noise_analysis import analyze_noise_pattern
+from artifact import detect_artifacts
 from explainer import generate_explanation
 
 app = FastAPI()
@@ -25,104 +28,88 @@ app.add_middleware(
 )
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-model_path = 'weights/best_model.pth'
 model = None
-
-# Custom CNN requires 32x32 images
-transform = transforms.Compose([
-    transforms.Resize((32, 32)),
-    transforms.ToTensor(),
-    transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
-])
 
 @app.on_event("startup")
 def startup_event():
     global model
-    if os.path.exists(model_path):
-        model = load_inference_model(model_path, device)
+    # Load production HuggingFace model (downloads automatically on first run)
+    model = load_inference_model(None, device)
 
 @app.get("/status")
 def status():
-    return {"status": "ok", "mode": "hybrid-ml-exif", "ml_ready": model is not None}
+    return {"status": "ok", "mode": "multi-branch-fusion-v2", "ml_ready": model is not None}
 
 @app.post("/analyze")
 async def analyze(file: UploadFile = File(...)):
     global model
     if model is None:
-        if os.path.exists(model_path):
-            model = load_inference_model(model_path, device)
-        else:
-            return {"error": "ML Model not trained yet. Run train.py first to satisfy the course constraints!"}
+        model = load_inference_model(None, device)
+        if model is None:
+            return {"error": "AI detector model failed to load. Check internet connection for HuggingFace download."}
             
     content = await file.read()
     filename = file.filename
     
-    # 1. EXIF Heuristics (Rule-based Base Layer)
+    # 1. EXIF Heuristics (Metadata Layer)
     exif_verdict = compute_exif_heuristics(content, filename)
     exif_is_ai = exif_verdict['isAi']
     exif_confidence = exif_verdict['confidence'] / 100.0
     metadata_reasons = exif_verdict['reasons']
     
-    # 2. PyTorch CNN Prediction (ML Layer)
+    # 2. Primary ML Detection (Sightengine API → HuggingFace fallback)
     try:
         img = Image.open(io.BytesIO(content)).convert('RGB')
     except Exception as e:
         return {"error": f"Invalid image format: {e}"}
-        
-    input_tensor = transform(img).unsqueeze(0).to(device)
     
-    with torch.no_grad():
-        outputs = model(input_tensor)
-        probs = F.softmax(outputs, dim=1)
-        conf, preds = torch.max(probs, 1)
-        
-    class_idx = preds.item()
-    ml_confidence = conf.item()
-    
-    # Resolve mapping
-    mapping_file = 'weights/class_mapping.json'
-    ml_is_ai = False
-    
-    if os.path.exists(mapping_file):
-        with open(mapping_file, 'r') as f:
-            mapping = json.load(f)
-            prediction_label = mapping.get(str(class_idx), "")
-            if 'fake' in prediction_label.lower() or 'ai' in prediction_label.lower():
-                ml_is_ai = True
-    else:
-        ml_is_ai = (class_idx == 0)
+    ml_is_ai, ml_confidence, ml_source = predict_image(model, img, raw_bytes=content)
 
-    # 3. Pixel Heuristics
+    # 3. Extracted Analytical Features
+    freq_prob, freq_features = extract_frequency_features(content)
+    noise_prob, noise_features = analyze_noise_pattern(content)
+    artifact_prob, artifact_features = detect_artifacts(content)
+    
     ela_cv2 = compute_ela(content)
     ela_variance = float(ela_cv2.var()) if ela_cv2 is not None else 0.0
-    noise_score = float(compute_high_freq_noise(content))
 
-    # Calculate unified P(AI) scale
-    p_ml = ml_confidence if ml_is_ai else (1.0 - ml_confidence)
+    # Unified P(AI) Variables
+    p_ml   = ml_confidence
     p_exif = exif_confidence if exif_is_ai else (1.0 - exif_confidence)
-    
-    # Map Pixel heuristics to Probability (0 to 1)
-    p_ela = min(1.0, ela_variance / 250.0)
-    p_noise = min(1.0, noise_score / 2500.0)
-    
-    # Core Verdict Logic
-    # Mirroring the robust Github repository Metadata approach. The ML model is relegated to a minor 5% supplementary signal.
-    # The final overarching verdict heavily prioritizes hard structural EXIF analysis and ELA matrices.
-    p_final = (p_exif * 0.75) + (p_ela * 0.20) + (p_ml * 0.05)
-        
-    final_is_ai = bool(p_final >= 0.5)
-    final_confidence = float(p_final if final_is_ai else (1.0 - p_final))
+
+    # 4. ML-Only Fusion
+    # Secondary signals (ELA, noise, freq) are too noisy for general photos
+    # (e.g., WhatsApp recompression inflates ELA; pro photos have SDXL-like traits)
+    # → Use ONLY the ML model score as the decision signal.
+    # Small EXIF bonus only if conclusive metadata evidence exists.
+    final_score = p_ml
+
+    # Only apply EXIF correction when metadata is CONCLUSIVE
+    if p_exif > 0.90:   # AI software tag in EXIF (e.g. "Midjourney")
+        final_score = min(0.99, final_score + 0.15)
+    elif p_exif < 0.08:  # Full camera chain: Make + Model + GPS + DateOriginal
+        final_score = max(0.01, final_score - 0.10)
+
+    # Threshold: 0.70 — require strong confidence before labelling as AI.
+    # Real photos score 0.15–0.55 on well-calibrated models.
+    # Fully AI images (Midjourney, DALL-E, SD) score 0.75–0.99.
+    # The 0.50–0.70 grey zone → Real (we accept missing borderline AI
+    # rather than falsely flagging real photos as AI).
+    final_is_ai = bool(final_score >= 0.70)
+    final_confidence = float(final_score if final_is_ai else (1.0 - final_score))
     
     ela_base64 = ""
     if ela_cv2 is not None:
         _, buffer = cv2.imencode('.jpg', cv2.cvtColor(ela_cv2, cv2.COLOR_RGB2BGR))
         ela_base64 = base64.b64encode(buffer).decode('utf-8')
     
-    # 4. Explainability
+    # 5. Explainability
     explanation = generate_explanation(
         final_is_ai, final_confidence, 
         ml_is_ai, ml_confidence,
-        ela_variance, noise_score, metadata_reasons
+        freq_prob, noise_prob, artifact_prob,
+        metadata_reasons,
+        ela_variance=ela_variance
     )
     
     return {
@@ -131,8 +118,11 @@ async def analyze(file: UploadFile = File(...)):
         "explanation": explanation,
         "heuristics": {
             "ela_variance": float(f"{ela_variance:.2f}"),
-            "noise_score": float(f"{noise_score:.2f}"),
-            "exif_reasons": metadata_reasons
+            "noise_score": float(f"{noise_features.get('noise_variance', 0.0):.2f}"),
+            "exif_reasons": metadata_reasons,
+            "frequency_ai_prob": float(f"{freq_prob:.2f}"),
+            "noise_ai_prob": float(f"{noise_prob:.2f}"),
+            "artifact_ai_prob": float(f"{artifact_prob:.2f}")
         },
         "ela_image": f"data:image/jpeg;base64,{ela_base64}" if ela_base64 else None
     }

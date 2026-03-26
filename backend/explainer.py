@@ -1,24 +1,34 @@
-def generate_explanation(final_is_ai, final_confidence, ml_is_ai, ml_confidence, ela_variance, noise_score, metadata_reasons):
-    expl = f"We predict this image is {'AI Generated' if final_is_ai else 'an Authentic Photograph'} with {final_confidence*100:.1f}% confidence. "
+def generate_explanation(final_is_ai, final_confidence, ml_is_ai, ml_confidence, freq_prob, noise_prob, artifact_prob, metadata_reasons, ela_variance=0.0):
+    verdict = 'AI Generated' if final_is_ai else 'an Authentic Photograph'
+    expl = f"We predict this image is **{verdict}** with {final_confidence*100:.1f}% confidence.\n\n"
     
-    expl += f"\n\n**Machine Learning CNN:** Our PyTorch neural network analyzed the image's deep spatial features and independently predicts it is {'AI Generated' if ml_is_ai else 'Authentic'} ({ml_confidence*100:.1f}% confidence)."
+    # ML signal
+    ml_label = 'AI Generated' if ml_is_ai else 'Authentic'
+    expl += f"**AI Model Ensemble:** Our multi-model detector classifies this image as {ml_label} ({ml_confidence*100:.1f}% confidence). "
+    expl += "Two independently trained HuggingFace ViT models (trained on real Midjourney/Stable Diffusion/DALL-E imagery) contributed to this score.\n\n"
     
+    # ELA
+    if ela_variance > 300:
+        expl += f"**Error Level Analysis (ELA={ela_variance:.0f}):** Strong regional inconsistencies detected. Different image regions show drastically different compression artifacts — a hallmark of AI inpainting or partial regeneration where only certain areas were synthetically altered.\n\n"
+    elif ela_variance > 100:
+        expl += f"**Error Level Analysis (ELA={ela_variance:.0f}):** Moderate structural irregularities present, suggesting possible AI-assisted editing or enhancement.\n\n"
+    else:
+        expl += f"**Error Level Analysis (ELA={ela_variance:.0f}):** Compression artifacts are uniform across the image, consistent with an unaltered photograph.\n\n"
+    
+    # EXIF
     if metadata_reasons:
-        expl += "\n\n**EXIF & Metadata Rules:** " + " ".join(metadata_reasons)
-        
-    expl += "\n\n**Pixel Variance Analysis:** "
+        expl += "**EXIF & Metadata:** " + " ".join(metadata_reasons) + "\n\n"
     
-    if noise_score > 1500:
-        expl += "High-frequency noise (Laplacian) is extremely sharp, typical for diffusion algorithms. "
-    else:
-        expl += "Noise variance is lower, matching standard image compression behaviors. "
-        
-    if ela_variance > 400:
-        expl += f"Error Level Analysis (ELA={ela_variance:.1f}) reveals highly inconsistent structural pixel irregularities commonly seen when AI pieces together local blocks or generative filters are applied. "
-    else:
-        expl += f"ELA (ELA={ela_variance:.1f}) shows uniform/natural compression artifacts, proving the physical light structures haven't been synthetically degraded. "
-        
-    if final_is_ai and not ml_is_ai:
-        expl += "\n\n*Note: Even though the ML model found visual similarities to authentic images, our structural ELA physics and Metadata checks conclusively classify it as AI-generated.*"
-            
+    # Signal analysis
+    signals = []
+    if freq_prob > 0.6:
+        signals.append("high-frequency spectral anomalies typical of generative diffusion models")
+    if noise_prob > 0.6:
+        signals.append("unnaturally smooth noise patterns inconsistent with physical camera sensors")
+    if artifact_prob > 0.6:
+        signals.append("over-smooth local regions and repeated texture patterns common in AI synthesis")
+    
+    if signals:
+        expl += "**Signal Findings:** This image exhibits " + ", and ".join(signals) + "."
+    
     return expl

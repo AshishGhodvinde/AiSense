@@ -134,11 +134,12 @@ def compute_exif_heuristics(image_bytes, filename=""):
     if "png" in filename.lower() and not exif_present:
         reasons.append('PNG has no EXIF; common for AI exports.')
         
-    reasons.append('Insufficient camera metadata (make/model/exposure/date/GPS).')
+    reasons.append('Insufficient camera metadata (common for web downloads/social media).')
     
     edit_hints = ['photoshop', 'lightroom', 'gimp']
     if any(h in software_str for h in edit_hints):
         reasons.append('Edited in an image editor (not conclusive).')
         
-    conf_base = int(min(88.0, 60.0 + (2.0 - min(2.0, float(device_evidence))) * 10.0))
-    return {'isAi': True, 'confidence': conf_base, 'reasons': reasons}
+    # Missing EXIF shouldn't overwhelmingly classify as AI (since most internet images strip it).
+    # Default to neutral confidence 50%.
+    return {'isAi': False, 'confidence': 50, 'reasons': list(set(reasons))}

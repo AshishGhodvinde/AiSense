@@ -6,6 +6,8 @@ torchaudio
 opencv-python
 pillow
 python-multipart
-kagglehub
 tqdm
 scipy
+transformers
+python-dotenv
+requests

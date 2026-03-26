@@ -1,10 +1,10 @@
-# Node
+# ── Node / Frontend ───────────────────────────────────────────────────────────
 node_modules/
 dist/
 .env.local
 .env.*.local
 
-# Python
+# ── Python / Backend ──────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *$py.class
@@ -14,11 +14,30 @@ backend/.venv/
 venv/
 env/
 
-# PyTorch Weights & Datasets
+# ── Secrets (NEVER commit) ────────────────────────────────────────────────────
+.env
+# .env.example is safe to commit (contains no real secrets)
+
+# ── Model Weights & Dataset Cache ────────────────────────────────────────────
 backend/weights/
 *.pth
 *.pt
+*.bin               # HuggingFace raw weights
+*.safetensors       # HuggingFace safetensors weights
 
-# OS Files
+# ── HuggingFace model cache (auto-downloaded, large) ─────────────────────────
+backend/.cache/
+~/.cache/huggingface/
+
+# ── Kaggle dataset downloads ──────────────────────────────────────────────────
+~/.cache/kagglehub/
+backend/data/
+
+# ── OS Files ──────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+desktop.ini
+
+# ── Logs & Temp ───────────────────────────────────────────────────────────────
+*.log
+*.tmp
